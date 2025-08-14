@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment, useCallback } from 'react';
+import { useState, useEffect, Fragment, useCallback, useRef, forwardRef } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { useDispatch } from 'react-redux';
 import Swal from 'sweetalert2';
@@ -8,12 +8,183 @@ import IconX from '../../components/Icon/IconX';
 import IconPlus from '../../components/Icon/IconPlus';
 import { Visibility, Delete, Share } from '@mui/icons-material';
 import { createClient } from '@supabase/supabase-js';
-import BannerImg from '../../images/banner.png';
+import * as htmlToImage from 'html-to-image';
+import QRCode from 'qrcode';
+import { v4 as uuidv4 } from 'uuid';
 
 const supabaseUrl = import.meta.env.VITE_REACT_APP_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_REACT_APP_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+/** -------- Share Card (Professional look) -------- */
+interface ShareCardProps {
+    user: {
+        id: string;
+        fname: string;
+        lname: string;
+        email: string;
+        phone: string;
+        nic: string;
+    };
+    qrPayload: string; // what to encode in QR (we use user.id)
+}
+
+const ShareCard = forwardRef<HTMLDivElement, ShareCardProps>(({ user, qrPayload }, ref) => {
+    const qrRef = useRef<HTMLCanvasElement | null>(null);
+
+    useEffect(() => {
+        if (qrRef.current) {
+            QRCode.toCanvas(qrRef.current, qrPayload || String(user.id), {
+                margin: 1,
+                width: 240,
+                errorCorrectionLevel: 'M',
+            });
+        }
+    }, [qrPayload, user?.id]);
+
+    return (
+        <div
+            ref={ref as any}
+            style={{
+                width: 1000,
+                padding: 32,
+                background: 'linear-gradient(135deg, #0b1020 0%, #121a33 60%, #101827 100%)',
+                color: '#e5e7eb',
+                fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, 'Helvetica Neue', Arial",
+                borderRadius: 24,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+                border: '1px solid rgba(255,255,255,0.06)',
+            }}
+        >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+                <div
+                    style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 12,
+                        background: 'linear-gradient(160deg, rgba(59,130,246,0.2), rgba(99,102,241,0.2))',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        fontWeight: 700,
+                        letterSpacing: 1,
+                    }}
+                >
+                    NL
+                </div>
+                <div>
+                    <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2, color: '#fff' }}>Native Lodge — Activation Card</div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Verified member pass</div>
+                </div>
+                <div style={{ marginLeft: 'auto', opacity: 0.7, fontSize: 12 }}>ID: {user?.id}</div>
+            </div>
+
+            {/* Body */}
+            <div
+                style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 260px',
+                    gap: 24,
+                    alignItems: 'stretch',
+                }}
+            >
+                {/* Left: details */}
+                <div
+                    style={{
+                        background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        borderRadius: 20,
+                        padding: 20,
+                    }}
+                >
+                    <div
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: '180px 1fr',
+                            rowGap: 12,
+                            columnGap: 12,
+                            fontSize: 15,
+                        }}
+                    >
+                        <div style={{ opacity: 0.7 }}>First Name</div>
+                        <div style={{ fontWeight: 600, color: '#fff' }}>{user.fname}</div>
+
+                        <div style={{ opacity: 0.7 }}>Last Name</div>
+                        <div style={{ fontWeight: 600, color: '#fff' }}>{user.lname}</div>
+
+                        <div style={{ opacity: 0.7 }}>Email</div>
+                        <div style={{ fontWeight: 600, color: '#fff' }}>{user.email}</div>
+
+                        <div style={{ opacity: 0.7 }}>Phone</div>
+                        <div style={{ fontWeight: 600, color: '#fff' }}>{user.phone}</div>
+
+                        <div style={{ opacity: 0.7 }}>NIC Number</div>
+                        <div style={{ fontWeight: 600, color: '#fff' }}>{user.nic}</div>
+                    </div>
+
+                    <div
+                        style={{
+                            marginTop: 20,
+                            height: 1,
+                            background: 'linear-gradient(90deg, rgba(255,255,255,0.0), rgba(255,255,255,0.15), rgba(255,255,255,0.0))',
+                        }}
+                    />
+
+                    <div
+                        style={{
+                            marginTop: 16,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            fontSize: 12,
+                            opacity: 0.85,
+                        }}
+                    >
+                        <span>Issued by Native Lodge</span>
+                        <span
+                            style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: '999px',
+                                background: '#22c55e',
+                            }}
+                        />
+                        <span>Valid for verification on site</span>
+                    </div>
+                </div>
+
+                {/* Right: QR */}
+                <div
+                    style={{
+                        background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        borderRadius: 20,
+                        padding: 20,
+                        display: 'grid',
+                        alignContent: 'center',
+                        justifyItems: 'center',
+                        gap: 12,
+                    }}
+                >
+                    <canvas
+                        ref={qrRef}
+                        style={{
+                            width: 220,
+                            height: 220,
+                            background: '#fff',
+                            borderRadius: 12,
+                        }}
+                    />
+                    <div style={{ fontSize: 12, opacity: 0.8, textAlign: 'center' }}>Scan to identify user</div>
+                </div>
+            </div>
+        </div>
+    );
+});
+ShareCard.displayName = 'ShareCard';
+
+/** -------------- Main Users Component -------------- */
 const Users = () => {
     const dispatch = useDispatch();
     const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -30,10 +201,15 @@ const Users = () => {
         email: '',
         nic: '',
         amount: '',
+        card_url: '', // 👈 add card_url to form for viewing
     });
     const [errors, setErrors] = useState<any>({});
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 10;
+
+    // For share card rendering
+    const cardRef = useRef<HTMLDivElement | null>(null);
+    const [shareTarget, setShareTarget] = useState<any | null>(null);
 
     useEffect(() => {
         dispatch(setPageTitle('Users'));
@@ -54,10 +230,7 @@ const Users = () => {
         setLoading(true);
         Swal.fire({ title: 'Loading users...', didOpen: () => Swal.showLoading() });
 
-        const { data, error } = await supabase
-            .from('native_users')
-            .select('*')
-            .order('created_at', { ascending: false });
+        const { data, error } = await supabase.from('native_users').select('*').order('created_at', { ascending: false });
 
         Swal.close();
         setLoading(false);
@@ -68,8 +241,8 @@ const Users = () => {
             return;
         }
 
-        setUsers(data);
-        setFilteredUsers(data);
+        setUsers(data || []);
+        setFilteredUsers(data || []);
         setCurrentPage(1);
     }, [userEmail]);
 
@@ -78,10 +251,8 @@ const Users = () => {
     }, [fetchUsers]);
 
     useEffect(() => {
-        const filtered = users.filter((user) =>
-            user.fname.toLowerCase().includes(search.toLowerCase()) ||
-            user.lname.toLowerCase().includes(search.toLowerCase()) ||
-            user.email.toLowerCase().includes(search.toLowerCase())
+        const filtered = users.filter(
+            (user) => user.fname.toLowerCase().includes(search.toLowerCase()) || user.lname.toLowerCase().includes(search.toLowerCase()) || user.email.toLowerCase().includes(search.toLowerCase())
         );
         setFilteredUsers(filtered);
     }, [search, users]);
@@ -91,6 +262,61 @@ const Users = () => {
         setErrors({ ...errors, [e.target.id]: null });
     };
 
+    /** Upload PNG to Supabase Storage and return public URL (bucket: native) */
+    const uploadPngToSupabase = async (pngDataUrl: string, filename: string) => {
+        const base64 = pngDataUrl.split(',')[1];
+        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+
+        const { error: upErr } = await supabase.storage
+            .from('native') // ensure bucket exists and is public (or use signed URL below)
+            .upload(filename, bytes, {
+                contentType: 'image/png',
+                upsert: true,
+            });
+        if (upErr) throw upErr;
+
+        const { data: pub } = supabase.storage.from('native').getPublicUrl(filename);
+        return pub.publicUrl;
+
+        // If the bucket is private, use this instead:
+        // const { data: signed, error: sErr } = await supabase.storage
+        //   .from('native')
+        //   .createSignedUrl(filename, 60 * 60 * 24 * 7);
+        // if (sErr) throw sErr;
+        // return signed.signedUrl;
+    };
+
+    /** Helper: render card → PNG → upload → return URL (and unmount renderer) */
+    const generateAndUploadCard = async (userRow: any): Promise<string> => {
+        // mount card offscreen
+        setShareTarget({
+            id: String(userRow.id),
+            fname: userRow.fname,
+            lname: userRow.lname,
+            email: userRow.email,
+            phone: userRow.phone,
+            nic: userRow.nic,
+        });
+
+        // wait for mount
+        await new Promise((r) => setTimeout(r, 50));
+        if (!cardRef.current) throw new Error('Card not ready');
+
+        // rasterize at 2x for crispness
+        const dataUrl = await htmlToImage.toPng(cardRef.current, { pixelRatio: 2 });
+
+        // upload
+        const filename = `cards/user-${userRow.id}-${uuidv4()}.png`;
+
+        const publicUrl = await uploadPngToSupabase(dataUrl, filename);
+
+        // unmount hidden renderer
+        setShareTarget(null);
+
+        return publicUrl;
+    };
+
+    /** Save (create/update). On create -> generate card and save card_url. */
     const saveUser = async () => {
         const validationErrors: any = {};
 
@@ -123,6 +349,7 @@ const Users = () => {
         }
 
         try {
+            // duplication checks only for create
             if (!form.id) {
                 const { data: duplicates, error: dupError } = await supabase
                     .from('native_users')
@@ -136,16 +363,15 @@ const Users = () => {
                 }
 
                 const dupErrors: any = {};
-                if (duplicates.some((u) => u.email === form.email)) dupErrors.email = 'Email already exists.';
-                if (duplicates.some((u) => u.phone === form.phone)) dupErrors.phone = 'Phone already exists.';
-                if (duplicates.some((u) => u.nic === form.nic)) dupErrors.nic = 'NIC already exists.';
+                if ((duplicates || []).some((u) => u.email === form.email)) dupErrors.email = 'Email already exists.';
+                if ((duplicates || []).some((u) => u.phone === form.phone)) dupErrors.phone = 'Phone already exists.';
+                if ((duplicates || []).some((u) => u.nic === form.nic)) dupErrors.nic = 'NIC already exists.';
 
                 if (Object.keys(dupErrors).length > 0) {
                     setErrors(dupErrors);
                     return;
                 }
             }
-
 
             const newUser = {
                 fname: form.fname,
@@ -157,27 +383,54 @@ const Users = () => {
             };
 
             if (form.id) {
-                await supabase.from('native_users').update(newUser).eq('id', form.id);
+                // UPDATE
+                const { error: upErr } = await supabase.from('native_users').update(newUser).eq('id', form.id);
+                if (upErr) throw upErr;
                 Swal.fire('Updated!', 'User updated successfully.', 'success');
             } else {
-                await supabase.from('native_users').insert([newUser]);
-                Swal.fire('Added!', 'User added successfully.', 'success');
+                // CREATE + RETURN new row
+                const { data: created, error: insErr } = await supabase.from('native_users').insert([newUser]).select('*').single();
+
+                if (insErr) throw insErr;
+
+                // Generate card and store URL
+                Swal.fire({ title: 'Generating card...', didOpen: () => Swal.showLoading() });
+                const cardUrl = await generateAndUploadCard(created);
+
+                // Save card_url to row
+                const { error: updErr } = await supabase.from('native_users').update({ card_url: cardUrl }).eq('id', created.id);
+                if (updErr) {
+                    console.warn('Card URL update failed:', updErr);
+                }
+
+                Swal.close();
+                Swal.fire('Added!', 'User added and card generated.', 'success');
             }
 
             setModalOpen(false);
             fetchUsers();
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            Swal.fire('Error', 'Failed to save user.', 'error');
+            Swal.close();
+            Swal.fire('Error', err?.message || 'Failed to save user.', 'error');
         }
     };
 
-
     const editUser = (user: any = null) => {
         if (user && typeof user === 'object') {
-            setForm({ ...user });
+            // include card_url so we can preview it in modal
+            setForm({ ...user, card_url: user.card_url || '' });
         } else {
-            setForm({ id: null, fname: '', lname: '', phone: '', email: '', nic: '', amount: '' });
+            setForm({
+                id: null,
+                fname: '',
+                lname: '',
+                phone: '',
+                email: '',
+                nic: '',
+                amount: '',
+                card_url: '',
+            });
         }
         setErrors({});
         setModalOpen(true);
@@ -201,29 +454,51 @@ const Users = () => {
     const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
     const paginated = filteredUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
+    /** Share flow:
+     * - If user has card_url, use it
+     * - else generate, save card_url, then use it
+     * - Open WhatsApp with message + image URL
+     */
     const handleShare = async (user: any) => {
-    const result = await Swal.fire({
-        title: `Send WhatsApp to ${user.fname}?`,
-        text: 'This will open WhatsApp with a pre-filled message and image link.',
-        icon: 'question',
-        confirmButtonText: 'Send WhatsApp',
-        showCancelButton: true,
-        customClass: {
-            confirmButton: 'btn btn-success mx-2',
-            cancelButton: 'btn btn-outline-secondary mx-2',
-        },
-        buttonsStyling: false,
-    });
+        try {
+            Swal.fire({
+                title: 'Preparing share...',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading(),
+            });
 
-    if (result.isConfirmed) {
-        const phone = user.phone.startsWith('+') ? user.phone : `+230${user.phone}`;
-        const imageUrl = 'https://ibb.co/MDwDVzV6'; // 🔁 Replace this with your actual image URL
-        const message = `Hi ${user.fname}, your account at Native Lodge has been successfully activated.\n\n📎 View your activation card:\n${imageUrl}`;
-        window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
-    }
-};
+            let cardUrl = user.card_url as string | undefined;
 
+            if (!cardUrl) {
+                // Generate, upload, and persist
+                const freshUrl = await generateAndUploadCard(user);
+                const { error: updErr } = await supabase.from('native_users').update({ card_url: freshUrl }).eq('id', user.id);
+                if (updErr) console.warn('Failed to persist card_url:', updErr);
+                cardUrl = freshUrl;
+                // Also update local state so list shows it's present if you reload UI
+                setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, card_url: freshUrl } : u)));
+                setFilteredUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, card_url: freshUrl } : u)));
+            }
 
+            Swal.close();
+
+            // WhatsApp
+            const phone = user.phone.startsWith('+') ? user.phone : `+230${user.phone}`;
+            const message =
+                `Hi ${user.fname},\n\n` +
+                `We’re pleased to inform you that your account with Native Lodge has been successfully activated.\n\n` +
+                `Your activation card is available here:\n${cardUrl}\n\n` +
+                `Please keep this card safe — scanning the QR code will identify your account instantly.`;
+
+            // Note: Web cannot attach an image file directly to WhatsApp.
+            // Including the URL lets WhatsApp show a preview (and the user can download it).
+            window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+        } catch (err: any) {
+            console.error(err);
+            Swal.close();
+            Swal.fire('Error', err?.message || 'Failed to prepare share', 'error');
+        }
+    };
 
     return (
         <div>
@@ -234,13 +509,7 @@ const Users = () => {
                         <IconPlus className="mr-2" /> Add User
                     </button>
                     <div className="relative">
-                        <input
-                            type="text"
-                            placeholder="Search by name or email"
-                            className="form-input py-2 pr-10"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                        />
+                        <input type="text" placeholder="Search by name or email" className="form-input py-2 pr-10" value={search} onChange={(e) => setSearch(e.target.value)} />
                         <IconSearch className="absolute right-3 top-1/2 -translate-y-1/2" />
                     </div>
                 </div>
@@ -297,7 +566,9 @@ const Users = () => {
                 <button className="btn btn-sm btn-primary" disabled={currentPage === 1} onClick={() => setCurrentPage(currentPage - 1)}>
                     Prev
                 </button>
-                <span className="text-sm text-gray-600">Page {currentPage} of {totalPages}</span>
+                <span className="text-sm text-gray-600">
+                    Page {currentPage} of {totalPages}
+                </span>
                 <button className="btn btn-sm btn-primary" disabled={currentPage === totalPages} onClick={() => setCurrentPage(currentPage + 1)}>
                     Next
                 </button>
@@ -311,23 +582,11 @@ const Users = () => {
                     </Transition.Child>
                     <div className="fixed inset-0 overflow-y-auto">
                         <div className="flex min-h-full items-center justify-center p-4">
-                            <Transition.Child
-                                as={Fragment}
-                                enter="ease-out duration-300"
-                                enterFrom="opacity-0 scale-95"
-                                enterTo="opacity-100 scale-100"
-                            >
-                                <Dialog.Panel
-                                    className="w-full max-w-lg rounded-xl overflow-hidden bg-white dark:bg-gray-900 text-black dark:text-white shadow-xl border border-gray-200 dark:border-gray-700"
-                                >
+                            <Transition.Child as={Fragment} enter="ease-out duration-300" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100">
+                                <Dialog.Panel className="w-full max-w-lg rounded-xl overflow-hidden bg-white dark:bg-gray-900 text-black dark:text-white shadow-xl border border-gray-200 dark:border-gray-700">
                                     <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                                        <h3 className="text-lg font-semibold">
-                                            {form.id ? 'Edit User' : 'Add User'}
-                                        </h3>
-                                        <button
-                                            onClick={() => setModalOpen(false)}
-                                            className="text-gray-500 hover:text-red-500 transition"
-                                        >
+                                        <h3 className="text-lg font-semibold">{form.id ? 'Edit User' : 'Add User'}</h3>
+                                        <button onClick={() => setModalOpen(false)} className="text-gray-500 hover:text-red-500 transition">
                                             <IconX />
                                         </button>
                                     </div>
@@ -351,19 +610,24 @@ const Users = () => {
                                                         placeholder={placeholder}
                                                         value={form[field]}
                                                         onChange={handleChange}
-                                                        className={`form-input w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500 ${errors[field] ? 'border-red-500' : ''
-                                                            }`}
+                                                        className={`form-input w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500 ${
+                                                            errors[field] ? 'border-red-500' : ''
+                                                        }`}
                                                     />
                                                     {errors[field] && <p className="text-red-500 text-xs mt-1">{errors[field]}</p>}
                                                 </div>
                                             ))}
 
+                                            {/* Preview the card below Amount (only when viewing/editing existing user) */}
+                                            {form?.card_url && (
+                                                <div className="mt-6">
+                                                    <div className="text-sm mb-2 opacity-80">Activation Card</div>
+                                                    <img src={form.card_url} alt="Activation Card" className="w-full rounded-xl border border-gray-200 dark:border-gray-700" />
+                                                </div>
+                                            )}
+
                                             <div className="flex justify-end gap-3 mt-6">
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-outline-danger"
-                                                    onClick={() => setModalOpen(false)}
-                                                >
+                                                <button type="button" className="btn btn-outline-danger" onClick={() => setModalOpen(false)}>
                                                     Cancel
                                                 </button>
                                                 <button type="button" className="btn btn-primary" onClick={saveUser}>
@@ -373,12 +637,22 @@ const Users = () => {
                                         </form>
                                     </div>
                                 </Dialog.Panel>
-
                             </Transition.Child>
                         </div>
                     </div>
                 </Dialog>
             </Transition>
+
+            {/* Hidden offscreen renderer for the share card */}
+            <div style={{ position: 'fixed', left: -9999, top: -9999 }}>
+                {shareTarget && (
+                    <ShareCard
+                        ref={cardRef}
+                        user={shareTarget}
+                        qrPayload={String(shareTarget.id)} // QR encodes ONLY the user id
+                    />
+                )}
+            </div>
         </div>
     );
 };
