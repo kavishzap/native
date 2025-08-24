@@ -120,7 +120,7 @@ const ShareCard = forwardRef<HTMLDivElement, ShareCardProps>(({ user, qrPayload 
                         <div style={{ fontWeight: 600, color: '#fff' }}>{user.phone}</div>
 
                         <div style={{ opacity: 0.7 }}>NIC Number</div>
-                        <div style={{ fontWeight: 600, color: '#fff' }}>{user.nic}</div>
+                        <div style={{ fontWeight: 600, color: '#fff' }}>{user.nic || '—'}</div>
                     </div>
 
                     <div
@@ -206,6 +206,7 @@ const Users = () => {
     const [errors, setErrors] = useState<any>({});
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 10;
+    const [regenCard, setRegenCard] = useState(false);
 
     // For share card rendering
     const cardRef = useRef<HTMLDivElement | null>(null);
@@ -262,57 +263,44 @@ const Users = () => {
         setErrors({ ...errors, [e.target.id]: null });
     };
 
-    /** Upload PNG to Supabase Storage and return public URL (bucket: native) */
     const uploadPngToSupabase = async (pngDataUrl: string, filename: string) => {
         const base64 = pngDataUrl.split(',')[1];
         const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 
-        const { error: upErr } = await supabase.storage
-            .from('native') // ensure bucket exists and is public (or use signed URL below)
-            .upload(filename, bytes, {
-                contentType: 'image/png',
-                upsert: true,
-            });
+        const { error: upErr } = await supabase.storage.from('native').upload(filename, bytes, {
+            contentType: 'image/png',
+            upsert: true, // <-- overwrite same path
+        });
         if (upErr) throw upErr;
 
         const { data: pub } = supabase.storage.from('native').getPublicUrl(filename);
-        return pub.publicUrl;
-
-        // If the bucket is private, use this instead:
-        // const { data: signed, error: sErr } = await supabase.storage
-        //   .from('native')
-        //   .createSignedUrl(filename, 60 * 60 * 24 * 7);
-        // if (sErr) throw sErr;
-        // return signed.signedUrl;
+        // cache-bust the public URL so the new image shows immediately
+        const busted = `${pub.publicUrl}?v=${Date.now()}`;
+        return busted;
     };
 
-    /** Helper: render card → PNG → upload → return URL (and unmount renderer) */
-    const generateAndUploadCard = async (userRow: any): Promise<string> => {
-        // mount card offscreen
+    const generateAndUploadCardFromForm = async (formData: any): Promise<string> => {
+        if (!formData?.id) throw new Error('Missing user ID for card generation');
+
         setShareTarget({
-            id: String(userRow.id),
-            fname: userRow.fname,
-            lname: userRow.lname,
-            email: userRow.email,
-            phone: userRow.phone,
-            nic: userRow.nic,
+            id: String(formData.id),
+            fname: formData.fname,
+            lname: formData.lname,
+            email: formData.email,
+            phone: formData.phone,
+            nic: formData.nic,
         });
 
-        // wait for mount
         await new Promise((r) => setTimeout(r, 50));
         if (!cardRef.current) throw new Error('Card not ready');
 
-        // rasterize at 2x for crispness
         const dataUrl = await htmlToImage.toPng(cardRef.current, { pixelRatio: 2 });
 
-        // upload
-        const filename = `cards/user-${userRow.id}-${uuidv4()}.png`;
-
+        // Use fixed path (deterministic) so we overwrite the same file
+        const filename = `cards/user-${formData.id}.png`;
         const publicUrl = await uploadPngToSupabase(dataUrl, filename);
 
-        // unmount hidden renderer
         setShareTarget(null);
-
         return publicUrl;
     };
 
@@ -335,8 +323,6 @@ const Users = () => {
             validationErrors.email = 'Invalid email format.';
         }
 
-        if (!form.nic) validationErrors.nic = 'NIC is required.';
-
         if (!form.amount) {
             validationErrors.amount = 'Amount is required.';
         } else if (isNaN(Number(form.amount))) {
@@ -354,7 +340,7 @@ const Users = () => {
                 const { data: duplicates, error: dupError } = await supabase
                     .from('native_users')
                     .select('id, email, phone, nic')
-                    .or(`email.eq.${form.email},phone.eq.${form.phone},nic.eq.${form.nic}`);
+                    .or(`email.eq.${form.email},phone.eq.${form.phone}${form.nic ? `,nic.eq.${form.nic}` : ''}`);
 
                 if (dupError) {
                     console.error('Duplication check error:', dupError);
@@ -365,7 +351,8 @@ const Users = () => {
                 const dupErrors: any = {};
                 if ((duplicates || []).some((u) => u.email === form.email)) dupErrors.email = 'Email already exists.';
                 if ((duplicates || []).some((u) => u.phone === form.phone)) dupErrors.phone = 'Phone already exists.';
-                if ((duplicates || []).some((u) => u.nic === form.nic)) dupErrors.nic = 'NIC already exists.';
+                // Only validate NIC if provided
+                if (form.nic && (duplicates || []).some((u) => u.nic === form.nic)) dupErrors.nic = 'NIC already exists.';
 
                 if (Object.keys(dupErrors).length > 0) {
                     setErrors(dupErrors);
@@ -383,10 +370,25 @@ const Users = () => {
             };
 
             if (form.id) {
-                // UPDATE
                 const { error: upErr } = await supabase.from('native_users').update(newUser).eq('id', form.id);
                 if (upErr) throw upErr;
-                Swal.fire('Updated!', 'User updated successfully.', 'success');
+
+                // If toggle is on, regenerate the image now
+                if (regenCard) {
+                    Swal.fire({ title: 'Updating card...', didOpen: () => Swal.showLoading() });
+                    try {
+                        const cardUrl = await generateAndUploadCardFromForm({ ...form, ...newUser, id: form.id });
+                        const { error: updCardErr } = await supabase.from('native_users').update({ card_url: cardUrl }).eq('id', form.id);
+                        if (updCardErr) console.warn('Card URL update failed:', updCardErr);
+
+                        // update local state so the modal preview refreshes immediately
+                        setForm((prev: any) => ({ ...prev, card_url: cardUrl }));
+                    } finally {
+                        Swal.close();
+                    }
+                }
+
+                Swal.fire('Updated!', `User updated${regenCard ? ' and card regenerated' : ''}.`, 'success');
             } else {
                 // CREATE + RETURN new row
                 const { data: created, error: insErr } = await supabase.from('native_users').insert([newUser]).select('*').single();
@@ -395,7 +397,7 @@ const Users = () => {
 
                 // Generate card and store URL
                 Swal.fire({ title: 'Generating card...', didOpen: () => Swal.showLoading() });
-                const cardUrl = await generateAndUploadCard(created);
+                const cardUrl = await generateAndUploadCardFromForm(created);
 
                 // Save card_url to row
                 const { error: updErr } = await supabase.from('native_users').update({ card_url: cardUrl }).eq('id', created.id);
@@ -433,22 +435,78 @@ const Users = () => {
             });
         }
         setErrors({});
+        setRegenCard(false);
         setModalOpen(true);
+    };
+    // --- helper: turn a public/signed Supabase Storage URL into a bucket path ---
+    const extractStoragePath = (url: string, bucket = 'native'): string | null => {
+        try {
+            const u = new URL(url);
+            // examples:
+            // /storage/v1/object/public/native/cards/user-123.png
+            // /storage/v1/object/sign/native/cards/user-123.png?token=...
+            const pubPrefix = `/storage/v1/object/public/${bucket}/`;
+            const signPrefix = `/storage/v1/object/sign/${bucket}/`;
+
+            if (u.pathname.startsWith(pubPrefix)) return u.pathname.slice(pubPrefix.length);
+            if (u.pathname.startsWith(signPrefix)) return u.pathname.slice(signPrefix.length);
+
+            // fallback: old formats or CDN rewrites
+            const idx = u.pathname.indexOf(`/object/`);
+            if (idx !== -1) {
+                const after = u.pathname.slice(idx + `/object/`.length); // e.g. "public/native/cards/.."
+                const parts = after.split('/');
+                if (parts.length >= 3 && parts[1] === bucket) {
+                    return parts.slice(2).join('/'); // "cards/.."
+                }
+            }
+            return null;
+        } catch {
+            return null;
+        }
     };
 
     const deleteUser = async (user: any) => {
         const confirm = await Swal.fire({
             title: `Delete ${user.fname} ${user.lname}?`,
+            text: 'This will also remove their activation card image.',
             icon: 'warning',
             showCancelButton: true,
             confirmButtonText: 'Delete',
         });
 
-        if (confirm.isConfirmed) {
-            await supabase.from('native_users').delete().eq('id', user.id);
-            fetchUsers();
-            Swal.fire('Deleted', 'User deleted.', 'success');
+        if (!confirm.isConfirmed) return;
+
+        // 1) try to delete the stored card image (ignore errors so the row still deletes)
+        try {
+            let pathToDelete: string | null = null;
+
+            if (user.card_url) {
+                pathToDelete = extractStoragePath(user.card_url, 'native');
+            }
+            // fallback to deterministic filename you use when regenerating
+            if (!pathToDelete && user?.id) {
+                pathToDelete = `cards/user-${user.id}.png`;
+            }
+
+            if (pathToDelete) {
+                const { error: remErr } = await supabase.storage.from('native').remove([pathToDelete]);
+                if (remErr) console.warn('Storage remove failed:', remErr.message || remErr);
+            }
+        } catch (e: any) {
+            console.warn('Card deletion skipped:', e?.message || e);
         }
+
+        // 2) delete the database row
+        const { error } = await supabase.from('native_users').delete().eq('id', user.id);
+        if (error) {
+            Swal.fire('Error', 'Failed to delete user.', 'error');
+            return;
+        }
+
+        // 3) refresh UI
+        fetchUsers();
+        Swal.fire('Deleted', 'User and card (if any) deleted.', 'success');
     };
 
     const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
@@ -471,7 +529,7 @@ const Users = () => {
 
             if (!cardUrl) {
                 // Generate, upload, and persist
-                const freshUrl = await generateAndUploadCard(user);
+                const freshUrl = await generateAndUploadCardFromForm(user);
                 const { error: updErr } = await supabase.from('native_users').update({ card_url: freshUrl }).eq('id', user.id);
                 if (updErr) console.warn('Failed to persist card_url:', updErr);
                 cardUrl = freshUrl;
@@ -618,11 +676,39 @@ const Users = () => {
                                                 </div>
                                             ))}
 
-                                            {/* Preview the card below Amount (only when viewing/editing existing user) */}
+                                            {/* Preview the card (if exists) */}
                                             {form?.card_url && (
-                                                <div className="mt-6">
+                                                <div className="mt-6 space-y-2">
                                                     <div className="text-sm mb-2 opacity-80">Activation Card</div>
                                                     <img src={form.card_url} alt="Activation Card" className="w-full rounded-xl border border-gray-200 dark:border-gray-700" />
+
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <label className="flex items-center gap-2 text-sm">
+                                                            <input type="checkbox" className="form-checkbox" checked={regenCard} onChange={(e) => setRegenCard(e.target.checked)} />
+                                                            Regenerate card image on Update
+                                                        </label>
+
+                                                        {/* <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-outline-primary"
+                                                            onClick={async () => {
+                                                                try {
+                                                                    Swal.fire({ title: 'Regenerating...', didOpen: () => Swal.showLoading() });
+                                                                    const cardUrl = await generateAndUploadCardFromForm({ ...form });
+                                                                    const { error: updErr } = await supabase.from('native_users').update({ card_url: cardUrl }).eq('id', form.id);
+                                                                    if (updErr) console.warn('Inline regen update failed:', updErr);
+                                                                    setForm((prev: any) => ({ ...prev, card_url: cardUrl }));
+                                                                    Swal.close();
+                                                                    Swal.fire('Done', 'Card regenerated.', 'success');
+                                                                } catch (e: any) {
+                                                                    Swal.close();
+                                                                    Swal.fire('Error', e?.message || 'Failed to regenerate card.', 'error');
+                                                                }
+                                                            }}
+                                                        >
+                                                            Regenerate Now
+                                                        </button> */}
+                                                    </div>
                                                 </div>
                                             )}
 
