@@ -211,6 +211,33 @@ const Users = () => {
     // For share card rendering
     const cardRef = useRef<HTMLDivElement | null>(null);
     const [shareTarget, setShareTarget] = useState<any | null>(null);
+    // Strong random password generator (12 chars, at least 1 of each class)
+    const generatePassword = (length = 12) => {
+        const lowers = 'abcdefghijklmnopqrstuvwxyz';
+        const uppers = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const digits = '0123456789';
+        const symbols = '!@#$%^&*()-_=+[]{};:,.?';
+
+        const all = lowers + uppers + digits + symbols;
+
+        const pick = (chars: string) => chars[Math.floor(Math.random() * chars.length)];
+
+        // ensure at least one from each class
+        let pwd = [pick(lowers), pick(uppers), pick(digits), pick(symbols)];
+
+        // fill the rest
+        for (let i = pwd.length; i < length; i++) {
+            pwd.push(pick(all));
+        }
+
+        // shuffle
+        for (let i = pwd.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [pwd[i], pwd[j]] = [pwd[j], pwd[i]];
+        }
+
+        return pwd.join('');
+    };
 
     useEffect(() => {
         dispatch(setPageTitle('Users'));
@@ -391,7 +418,13 @@ const Users = () => {
                 Swal.fire('Updated!', `User updated${regenCard ? ' and card regenerated' : ''}.`, 'success');
             } else {
                 // CREATE + RETURN new row
-                const { data: created, error: insErr } = await supabase.from('native_users').insert([newUser]).select('*').single();
+                const tempPassword = generatePassword(12); // <-- new
+
+                const { data: created, error: insErr } = await supabase
+                    .from('native_users')
+                    .insert([{ ...newUser, password: tempPassword }]) // <-- store it
+                    .select('*')
+                    .single();
 
                 if (insErr) throw insErr;
 
@@ -401,6 +434,7 @@ const Users = () => {
 
                 // Save card_url to row
                 const { error: updErr } = await supabase.from('native_users').update({ card_url: cardUrl }).eq('id', created.id);
+
                 if (updErr) {
                     console.warn('Card URL update failed:', updErr);
                 }
@@ -648,79 +682,71 @@ const Users = () => {
                                             <IconX />
                                         </button>
                                     </div>
+                                    {/* --- Modal Body (2-col when editing + card exists) --- */}
                                     <div className="px-6 py-5">
-                                        <form>
-                                            {[
-                                                { field: 'fname', label: 'First Name', placeholder: 'Enter first name' },
-                                                { field: 'lname', label: 'Last Name', placeholder: 'Enter last name' },
-                                                { field: 'email', label: 'Email', placeholder: 'Enter email address' },
-                                                { field: 'phone', label: 'Phone Number', placeholder: 'Enter phone number' },
-                                                { field: 'nic', label: 'National Identity Card Number', placeholder: 'Enter NIC number' },
-                                                { field: 'amount', label: 'Amount', placeholder: 'Enter amount (e.g. 100.00)' },
-                                            ].map(({ field, label, placeholder }) => (
-                                                <div key={field} className="mb-4">
-                                                    <label htmlFor={field} className="block mb-1 text-sm font-medium">
-                                                        {label}
-                                                    </label>
-                                                    <input
-                                                        id={field}
-                                                        type={field === 'amount' ? 'number' : 'text'}
-                                                        placeholder={placeholder}
-                                                        value={form[field]}
-                                                        onChange={handleChange}
-                                                        className={`form-input w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500 ${
-                                                            errors[field] ? 'border-red-500' : ''
-                                                        }`}
-                                                    />
-                                                    {errors[field] && <p className="text-red-500 text-xs mt-1">{errors[field]}</p>}
-                                                </div>
-                                            ))}
+                                        {/** When editing and card exists, show 2 cols; otherwise single column */}
+                                        {(() => {
+                                            const hasCard = Boolean(form?.id && form?.card_url);
+                                            return (
+                                                <form>
+                                                    <div className={`grid gap-6 ${hasCard ? 'md:grid-cols-2' : ''}`}>
+                                                        {/* Left: Inputs */}
+                                                        <div>
+                                                            {[
+                                                                { field: 'fname', label: 'First Name', placeholder: 'Enter first name' },
+                                                                { field: 'lname', label: 'Last Name', placeholder: 'Enter last name' },
+                                                                { field: 'email', label: 'Email', placeholder: 'Enter email address' },
+                                                                { field: 'phone', label: 'Phone Number', placeholder: 'Enter phone number' },
+                                                                { field: 'nic', label: 'National Identity Card Number', placeholder: 'Enter NIC number' },
+                                                                { field: 'amount', label: 'Amount', placeholder: 'Enter amount (e.g. 100.00)' },
+                                                            ].map(({ field, label, placeholder }) => (
+                                                                <div key={field} className="mb-4 last:mb-0">
+                                                                    <label htmlFor={field} className="block mb-1 text-sm font-medium">
+                                                                        {label}
+                                                                    </label>
+                                                                    <input
+                                                                        id={field}
+                                                                        type={field === 'amount' ? 'number' : 'text'}
+                                                                        placeholder={placeholder}
+                                                                        value={form[field]}
+                                                                        onChange={handleChange}
+                                                                        className={`form-input w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-primary-500 ${
+                                                                            errors[field] ? 'border-red-500' : ''
+                                                                        }`}
+                                                                    />
+                                                                    {errors[field] && <p className="text-red-500 text-xs mt-1">{errors[field]}</p>}
+                                                                </div>
+                                                            ))}
+                                                        </div>
 
-                                            {/* Preview the card (if exists) */}
-                                            {form?.card_url && (
-                                                <div className="mt-6 space-y-2">
-                                                    <div className="text-sm mb-2 opacity-80">Activation Card</div>
-                                                    <img src={form.card_url} alt="Activation Card" className="w-full rounded-xl border border-gray-200 dark:border-gray-700" />
+                                                        {/* Right: Card preview (only when editing and we have a card) */}
+                                                        {hasCard && (
+                                                            <div className="space-y-3">
+                                                                <div className="text-sm opacity-80">Activation Card</div>
+                                                                <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                                                    <img src={form.card_url} alt="Activation Card" className="w-full h-auto block" />
+                                                                </div>
 
-                                                    <div className="flex items-center justify-between gap-3">
-                                                        <label className="flex items-center gap-2 text-sm">
-                                                            <input type="checkbox" className="form-checkbox" checked={regenCard} onChange={(e) => setRegenCard(e.target.checked)} />
-                                                            Regenerate card image on Update
-                                                        </label>
-
-                                                        {/* <button
-                                                            type="button"
-                                                            className="btn btn-sm btn-outline-primary"
-                                                            onClick={async () => {
-                                                                try {
-                                                                    Swal.fire({ title: 'Regenerating...', didOpen: () => Swal.showLoading() });
-                                                                    const cardUrl = await generateAndUploadCardFromForm({ ...form });
-                                                                    const { error: updErr } = await supabase.from('native_users').update({ card_url: cardUrl }).eq('id', form.id);
-                                                                    if (updErr) console.warn('Inline regen update failed:', updErr);
-                                                                    setForm((prev: any) => ({ ...prev, card_url: cardUrl }));
-                                                                    Swal.close();
-                                                                    Swal.fire('Done', 'Card regenerated.', 'success');
-                                                                } catch (e: any) {
-                                                                    Swal.close();
-                                                                    Swal.fire('Error', e?.message || 'Failed to regenerate card.', 'error');
-                                                                }
-                                                            }}
-                                                        >
-                                                            Regenerate Now
-                                                        </button> */}
+                                                                <label className="flex items-center gap-2 text-sm">
+                                                                    <input type="checkbox" className="form-checkbox" checked={regenCard} onChange={(e) => setRegenCard(e.target.checked)} />
+                                                                    Regenerate card image on Update
+                                                                </label>
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                </div>
-                                            )}
 
-                                            <div className="flex justify-end gap-3 mt-6">
-                                                <button type="button" className="btn btn-outline-danger" onClick={() => setModalOpen(false)}>
-                                                    Cancel
-                                                </button>
-                                                <button type="button" className="btn btn-primary" onClick={saveUser}>
-                                                    {form.id ? 'Update' : 'Add'}
-                                                </button>
-                                            </div>
-                                        </form>
+                                                    {/* Actions (span full width) */}
+                                                    <div className="flex justify-end gap-3 mt-6">
+                                                        <button type="button" className="btn btn-outline-danger" onClick={() => setModalOpen(false)}>
+                                                            Cancel
+                                                        </button>
+                                                        <button type="button" className="btn btn-primary" onClick={saveUser}>
+                                                            {form.id ? 'Update' : 'Add'}
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            );
+                                        })()}
                                     </div>
                                 </Dialog.Panel>
                             </Transition.Child>
