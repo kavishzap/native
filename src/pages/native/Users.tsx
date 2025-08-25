@@ -559,32 +559,52 @@ const Users = () => {
                 didOpen: () => Swal.showLoading(),
             });
 
-            let cardUrl = user.card_url as string | undefined;
+            let cardUrl: string | undefined = user.card_url as string | undefined;
 
+            // If no card yet, generate, upload, persist, and update local state
             if (!cardUrl) {
-                // Generate, upload, and persist
                 const freshUrl = await generateAndUploadCardFromForm(user);
                 const { error: updErr } = await supabase.from('native_users').update({ card_url: freshUrl }).eq('id', user.id);
+
                 if (updErr) console.warn('Failed to persist card_url:', updErr);
                 cardUrl = freshUrl;
-                // Also update local state so list shows it's present if you reload UI
+
+                // update UI lists immediately
                 setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, card_url: freshUrl } : u)));
                 setFilteredUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, card_url: freshUrl } : u)));
             }
 
             Swal.close();
 
-            // WhatsApp
-            const phone = user.phone.startsWith('+') ? user.phone : `+230${user.phone}`;
-            const message =
-                `Hi ${user.fname},\n\n` +
-                `We’re pleased to inform you that your account with Native Lodge has been successfully activated.\n\n` +
-                `Your activation card is available here:\n${cardUrl}\n\n` +
-                `Please keep this card safe — scanning the QR code will identify your account instantly.`;
+            // WhatsApp requires an E.164-ish number; add +230 if they gave a local number
+            const waNumber = (user.phone || '').startsWith('+') ? user.phone : `+230${user.phone}`;
+            const loginLink = 'https://native-lodge-user-wallet.netlify.app';
 
-            // Note: Web cannot attach an image file directly to WhatsApp.
-            // Including the URL lets WhatsApp show a preview (and the user can download it).
-            window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
+            // Grab the temporary password from the row
+            const tempPassword = user.password || 'your temporary password';
+
+            // Build the message (keeps your exact wording)
+            const message = `Hi ${user.fname || ''},
+
+We’re pleased to inform you that your account with Native Lodge has been successfully activated.
+
+You can now log in to your Native Wallet and view your activation card using the email address you provided and the following temporary password:
+${tempPassword}
+
+Log in here: ${loginLink}
+
+For security reasons, we recommend changing your password immediately after logging in.
+
+Use your activation card — scanning the QR code will instantly apply discounts when making a purchase.
+
+Welcome to Native Lodge!
+
+Best regards,
+The Native Lodge Team`;
+
+            // Open WhatsApp chat with the prefilled message
+            const url = `https://wa.me/${waNumber.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
+            window.open(url, '_blank');
         } catch (err: any) {
             console.error(err);
             Swal.close();

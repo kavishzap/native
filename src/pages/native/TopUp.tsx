@@ -119,7 +119,7 @@ const TopUpUser = () => {
 
     return (
         <div className="max-w-md mx-auto p-6 bg-white dark:bg-gray-900 text-black dark:text-white rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 mt-10">
-            <h2 className="text-xl font-bold mb-4 text-center">Top-Up User Account</h2>
+            <h2 className="text-xl font-bold mb-4 text-center">Top-Up User</h2>
             {/* Image */}
             <div className="flex justify-center mb-6">
                 <img src={topupImg} alt="Top Up" className="w-32 h-auto" />
